@@ -1,0 +1,611 @@
+#include <EasyButton.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <arduino-timer.h>
+
+#define RANDOM_MODE_SECONDS 300
+#define WAIT_ON_USER_SECONDS 5
+
+////////////////////////////////
+// Prototypes
+////////////////////////////////
+
+void IRAM_ATTR PinA();
+void IRAM_ATTR PinB();
+void setupEncoder();
+void drawBorders();
+void drawLargeText(char * effect);
+void drawSmallText(char * effect);
+void drawTopSmallTextSimple(char * effect);
+void onPressed();
+bool chooseRandomEffect(void *);
+bool waitingOnUserExpired(void *);
+void readEncoder();
+void loopTicker();
+void readPot();
+void setupDisplay();
+void setupSSD1306Ascii();
+bool chooseRandomEffect(void *);
+bool waitingOnUserExpired(void *);
+void printSeconds();
+void turnOnRandomMode();
+
+////////////////////////////////
+// Used for time conversions
+////////////////////////////////
+
+long day = 86400000; // 86400000 milliseconds in a day
+long hour = 3600000; // 3600000 milliseconds in an hour
+long minute = 60000; // 60000 milliseconds in a minute
+long second =  1000; // 1000 milliseconds in a second
+
+////////////////////////////////
+// Random Effect Switch Timer
+////////////////////////////////
+
+auto changeToRandomEffectTimer = timer_create_default(); // create a timer with default settings
+auto waitingOnUserTimer = timer_create_default(); // create a timer with default settings
+bool randomModeOn = false;
+bool waitingOnUser = false;
+bool debugTimers = true;
+
+////////////////////////////////
+// Rotary Encoder
+////////////////////////////////
+
+
+static int pinA = 35;
+static int pinB = 34;
+volatile byte aFlag = 0;
+volatile byte bFlag = 0;
+volatile byte encoderPos = 0;
+volatile byte oldEncPos = 0;
+volatile byte reading = 0;
+
+void IRAM_ATTR PinA()
+{
+  cli();
+  reading = GPIO_REG_READ(GPIO_IN1_REG) & 0xC;
+  if (reading == B1100 && aFlag)
+  {
+    encoderPos--;
+    bFlag = 0;
+    aFlag = 0;
+  }
+  else if (reading == B1000)
+    bFlag = 1;
+  sei();
+}
+
+void IRAM_ATTR PinB()
+{
+  cli();
+  reading = GPIO_REG_READ(GPIO_IN1_REG) & 0xC;
+  if (reading == B1100 && bFlag)
+  {
+    encoderPos++;
+    bFlag = 0;
+    aFlag = 0;
+  }
+  else if (reading == B100)
+    aFlag = 1;
+  sei();
+}
+
+void setupEncoder()
+{   
+  pinMode(pinA, INPUT);
+  pinMode(pinB, INPUT);
+  attachInterrupt(digitalPinToInterrupt(pinA), PinA, RISING);
+  attachInterrupt(digitalPinToInterrupt(pinB), PinB, RISING);
+}
+
+////////////////////////////////
+// EasyButton
+////////////////////////////////
+
+// Arduino pin where the button is connected to.
+#define BUTTON_PIN_32 32
+#define PATTERN_COUNT 8
+
+//EasyButton button(BUTTON_PIN, debounce, pullup, invert);
+EasyButton button1(BUTTON_PIN_32);
+uint8_t effectCounter = 0;
+uint8_t effectCurrent = 0;
+
+const char* currentEffect = "Current Effect: Radar";
+
+////////////////////////////////
+// SSD1306Ascii
+////////////////////////////////
+
+#define RTN_CHECK 1
+
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiWire.h"
+
+// 0X3C+SA0 - 0x3C or 0x3D
+#define I2C_ADDRESS 0x3C
+
+// Define proper RST_PIN if required.
+#define RST_PIN -1
+
+SSD1306AsciiWire oled;
+
+// Ticker state. Maintains text pointer queue and current ticker state.
+TickerState state;
+TickerState state2;
+TickerState state3;
+
+const char* text[] = {
+  "ESP32 16x16 Panel Display. ",
+  //"Created for Ginger, Graham, Liz & Jason Ogrady. ",
+  "Aurora visual Demos by Jason Coon. ",
+  "FastLED::NeoMatrix by Marc Merlin. ",
+  "Hardware by Bart Hirst. ",  
+  "                 ",  
+};
+
+#define TEXT_LINES 4
+
+const uint8_t* fontList[] = {
+  Arial14,
+  Arial_bold_14,
+  Callibri11,
+  Callibri11_bold,
+  Callibri11_italic,        
+  Callibri15,               // 5
+  Corsiva_12,
+  fixed_bold10x15,
+  font5x7,
+  font8x8,
+  Iain5x7,                  // 10
+  lcd5x7,
+  Stang5x7,
+  System5x7,
+  TimesNewRoman16,
+  TimesNewRoman16_bold,     // 15
+  TimesNewRoman16_italic,
+  utf8font10x16,
+  Verdana12,
+  Verdana12_bold,
+  Verdana12_italic,         // 20
+  X11fixed7x14,
+  X11fixed7x14B,
+  ZevvPeep8x16
+};
+
+#define TICKER_FONT_INDEX 5
+
+////////////////////////////////
+// Potentiometer
+////////////////////////////////
+
+const int potPin = 33;
+int potValue = 0;
+int potMax = 4095;
+int potMin = 0;
+
+////////////////////////////////
+// Adafruit_SSD1306
+////////////////////////////////
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
+void drawBorders() {
+  // Top Rect
+  // drawn with text now
+  display.drawRect(0, 0, display.width()-1, 15, SSD1306_WHITE);
+  // Bottom Rect
+  display.drawRect(0, 16, display.width()-1, display.height()-16, SSD1306_WHITE);  
+}
+
+void drawLargeText(char * effect) {
+
+  int16_t  x1, y1;
+  uint16_t w, h;
+
+  int centeredTextYStart = 0;
+  
+  // Draw centered text on a canvas buffer
+  GFXcanvas1 canvas(SCREEN_WIDTH-3, SCREEN_HEIGHT / 2);
+
+  // Adjust canvas cursor offset slightly based on text size
+  if (strlen(effect) > 6) {
+    canvas.setTextSize(2);
+    centeredTextYStart += 5;  // smaller text, move down a little to center
+  } else {
+    canvas.setTextSize(3);
+  }
+  
+  canvas.getTextBounds(effect, 0, 0, &x1, &y1, &w, &h);  
+  int centeredTextXStart = (SCREEN_WIDTH / 2) - (w / 2);
+  canvas.setCursor(centeredTextXStart, centeredTextYStart);    
+  canvas.println(effect);
+
+  // Copy centered text to display
+  display.drawBitmap(1, 30, canvas.getBuffer(), canvas.width(), canvas.height(), SSD1306_WHITE, SSD1306_BLACK); // Copy to screen
+  display.display();
+     
+}
+
+void drawSmallText(char * effect) {
+
+  int16_t  x1, y1;
+  uint16_t w, h;
+
+  int centeredTextYStart = 0;
+  
+  // Draw centered text on a canvas buffer
+  GFXcanvas1 canvas(SCREEN_WIDTH-3, 8);
+  canvas.setTextSize(1);
+  
+  canvas.getTextBounds(effect, 0, 0, &x1, &y1, &w, &h);  
+  int centeredTextXStart = (SCREEN_WIDTH / 2) - (w / 2);
+  canvas.setCursor(centeredTextXStart, centeredTextYStart);    
+  canvas.println(effect);
+
+  // Copy centered text to display
+  display.drawBitmap(1, 3, canvas.getBuffer(), canvas.width(), canvas.height(), SSD1306_WHITE, SSD1306_BLACK); // Copy to screen
+  display.display();
+
+}
+
+void drawTopSmallTextSimple(char * effect) {
+
+  //display.clearDisplay();
+  display.fillRoundRect(2, 2, display.width()-4, 12, 2, SSD1306_BLACK);
+  display.setTextSize(1);      // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setCursor(20, 3);     // Start at top-left corner  
+  display.print("Pattern:");
+  display.print(effect);
+  display.display();
+
+}
+
+bool effectStarted[PATTERN_COUNT];
+
+bool debugEffectCounter = false;
+  
+void onPressed()
+{       
+    if (debugEffectCounter) Serial.print(": effectCounter: ");
+    if (debugEffectCounter) Serial.print(effectCounter);      
+    
+    effectCurrent = effectCounter % PATTERN_COUNT;   
+    
+    if (debugEffectCounter) Serial.print(": effectCurrent: ");
+    if (debugEffectCounter) Serial.println(effectCurrent);  
+
+    switch(effectCurrent) {
+       case 0 :
+          //patternSpiro.stop();
+          patternRadar.start();
+//          if (effectStarted[effectCounter] == false) {
+//            Serial.println(F("Start Radar"));
+//            // Don't re-start 1st pattern
+//            //patternRadar.start();
+//            effectStarted[effectCounter] = true;
+//          }
+          drawLargeText("Radar");
+          break;
+       case 1 :
+          //patternRadar.stop();
+          patternCube.start();
+          drawLargeText("Cube");
+          break;
+       case 2 :
+          //patternCube.stop();
+          patternSwirl.start();
+          drawLargeText("Swirl");
+          break;
+       case 3 :
+          //patternSwirl.stop();
+          patternAttract.start();
+          drawLargeText("Attract");
+          break;
+       case 4 :
+          //patternAttract.stop();
+          patternFlock.start();
+          drawLargeText("Flock");
+          break;
+      case 5 :
+          //patternFlock.stop();
+          patternSpiral.start();
+          drawLargeText("Spiral");
+          break;
+      case 6 :
+          //patternSpiral.stop();
+          patternSpiro.start();
+          drawLargeText("Spiro");
+          break;        
+      case 7 :                        // Always make Random the last effect, because the random code only generates a random effect up to (PATTERN_COUNT - 1)
+          drawLargeText("Random");  
+          
+          if (debugTimers) {
+            printSeconds();
+            Serial.println(" : chose random, waiting on user");
+          }
+          
+          waitingOnUser = true;
+          waitingOnUserTimer.cancel();
+          waitingOnUserTimer.in(WAIT_ON_USER_SECONDS * 1000, waitingOnUserExpired);            
+          break;                
+    }
+    
+}
+
+void printSeconds() {
+  
+  long timeNow = millis();    
+  int seconds = (((timeNow % day) % hour) % minute) / second;
+  Serial.print(seconds);
+  
+}
+bool chooseRandomEffect(void *) {
+
+  if (debugTimers) {
+    printSeconds();
+    Serial.println(" : chooseRandomEffect");
+  }
+  
+  if (randomModeOn) {
+    effectCounter = random(PATTERN_COUNT - 1);    // Effect "random" is always the last effect in the list so exclude it
+    onPressed();  
+  }
+  return true; // repeat? true
+}
+
+bool waitingOnUserExpired(void *) {
+  turnOnRandomMode();
+  return false; // repeat? true
+}
+
+void turnOnRandomMode() {
+  if (debugTimers) {
+    printSeconds();
+    Serial.println(" : waitingOnUserExpired, randomModeOn!");
+  }    
+
+  drawSmallText("Random Mode");
+  changeToRandomEffectTimer.cancel();
+  changeToRandomEffectTimer.every(RANDOM_MODE_SECONDS * 1000, chooseRandomEffect);  
+  randomModeOn = true;             
+  chooseRandomEffect(NULL);
+}
+
+uint8_t debugEncoder = 0;
+
+void readEncoder()
+{
+  if (oldEncPos != encoderPos)
+  {
+
+    if (debugTimers) {
+      printSeconds();
+      Serial.println(" : cancel randomMode && waitingOnUser!");
+    }
+
+    if (randomModeOn) {
+        // reset top display text
+        drawSmallText("ESP32 LED Panel");
+    }
+
+    randomModeOn = false;
+    waitingOnUser = false;
+    
+    if (debugEncoder == 1) Serial.print("encoderPos: ");
+    if (debugEncoder == 1) Serial.print(encoderPos);
+
+    if (encoderPos == 255 && oldEncPos == 0) {
+      effectCounter--;
+    } else if (encoderPos == 0 && oldEncPos == 255) {
+      effectCounter--;
+    } else if (oldEncPos > encoderPos) {
+      effectCounter--;
+    } else {
+      effectCounter++;
+    }
+
+    onPressed();    
+    oldEncPos = encoderPos;    
+  }
+}
+
+uint32_t tickTime = 0;
+int n = 0;
+int n2 = 1;
+int n3 = 1;
+
+void loopTicker() {
+  Wire.setClock(400000L);    // 400 kHz I2C rate
+  if (tickTime <= millis()) {
+    tickTime = millis() + 30;
+
+  
+    int8_t rtn = oled.tickerTick(&state);
+    //int8_t rtn2 = oled.tickerTick(&state2);
+    //int8_t rtn3 = oled.tickerTick(&state3);
+
+    // See above for definition of RTN_CHECK.
+    if (rtn <= RTN_CHECK) {
+      // Should check for error. Return of false indicates error.
+      oled.tickerText(&state, text[(n++)%TEXT_LINES]);      
+    }
+
+//    // See above for definition of RTN_CHECK.
+//    if (rtn2 <= RTN_CHECK) {
+//      // Should check for error. Return of false indicates error.
+//      oled.tickerText(&state2, text[(n2++)%3]);      
+//    }
+
+    // See above for definition of RTN_CHECK.
+    // if (rtn3 <= RTN_CHECK) {
+    //   // Should check for error. Return of false indicates error.
+    //   oled.tickerText(&state3, currentEffect);      
+    // }
+
+  }
+}
+
+uint8_t throttleTicker = 0;
+uint8_t readControls = 0;
+uint8_t brightness;
+uint8_t debugSerial = 0;
+
+void readPot() {
+  
+  potValue = analogRead(potPin);
+  if (debugSerial == 1) Serial.print("potValue: ");  
+  if (debugSerial == 1) Serial.print(potValue);
+    
+  uint8_t newBrightness = map(potValue, potMin, potMax, 0, 255);
+  
+  if (debugSerial == 1) Serial.print(" | brightness: ");  
+  if (debugSerial == 1) Serial.print(brightness);
+
+  if (debugSerial == 1) Serial.print(" | newBrightness: ");  
+  if (debugSerial == 1) Serial.println(newBrightness);
+
+  if (abs(newBrightness - brightness) > 3) {    // deadzone
+    brightness = newBrightness;
+    if (debugSerial == 1) Serial.print("****** set brightness: ");  
+    if (debugSerial == 1) Serial.println(brightness);     
+    if (brightness > 0 || brightness <= 255) matrix->setBrightness(brightness);    
+  }
+     
+}
+
+void loop() { 
+
+//    if (throttleTicker % 2 == 0) { 
+//      loopTicker();
+//    }
+//    throttleTicker++;
+
+    if (readControls % 10 == 0) { 
+      readPot();
+      readEncoder();
+    }
+    readControls++;
+    
+    switch(effectCurrent) {
+       case 0 :
+          patternRadar.drawFrame();
+          break;
+       case 1 :
+          patternCube.drawFrame();
+          break;
+       case 2 :
+          patternSwirl.drawFrame();
+          break;
+       case 3 :
+          patternAttract.drawFrame();
+          break;
+       case 4 :
+          patternFlock.drawFrame();
+          break;
+       case 5 :
+          patternSpiral.drawFrame();
+          break;
+       case 6 :
+          patternSpiro.drawFrame();
+          break;                
+       case 7 :
+          // TODO Create "Random Mode" that switches every 30 minutes or something
+          patternSpiro.drawFrame();
+          break;                
+    }
+    
+    matrix->show();
+    button1.read();
+
+    if (randomModeOn) {
+      changeToRandomEffectTimer.tick();
+    }
+
+    if (waitingOnUser) {
+      // short timer is used to activate the random effect a few seconds after the user chooses it 
+      waitingOnUserTimer.tick();
+    }
+
+}
+
+void setupDisplay() {
+  
+  setupSSD1306Ascii();
+  
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+
+  // Clear the buffer
+  display.clearDisplay();
+  drawBorders();
+  drawSmallText("ESP32 LED Panel");
+   
+}
+
+void setupSSD1306Ascii() {
+
+#if RST_PIN >= 0
+  oled.begin(&Adafruit128x64, I2C_ADDRESS, RST_PIN);
+#else // RST_PIN >= 0
+  oled.begin(&Adafruit128x64, I2C_ADDRESS);
+#endif // RST_PIN >= 0
+
+  // Use Adafruit5x7, field at row 2, set1X, columns 16 through 100.  
+  oled.tickerInit(&state, fontList[TICKER_FONT_INDEX], 3, true, 1, display.width()-3);
+  //oled.tickerInit(&state2, fontList[20], 5, false, 1, display.width()-3);
+  //oled.tickerInit(&state3, fontList[13], 0, false, 1, display.width()-3);
+  
+}
+
+void setup() {
+    delay(1000);
+    Serial.begin(115200);
+
+    randomSeed(analogRead(0));
+    
+    button1.begin();
+    button1.onPressed(onPressed);
+
+    setupDisplay();
+    matrix_setup();
+    setupEncoder();
+    
+    Serial.print("Matrix Size: ");
+    Serial.print(mw);
+    Serial.print(" ");
+    Serial.println(mh);
+    
+    matrix->begin();
+    matrix->setBrightness(matrix_brightness);
+    matrix->setTextWrap(false);
+
+    effects.leds = matrixleds;
+    effects.Setup();
+
+    // turn on random by default
+    turnOnRandomMode();
+    
+    //start a random effect / pattern
+    // effectCounter = random(PATTERN_COUNT - 1);
+    // onPressed();
+          
+    matrix->clear();
+}
+
+
+// vim:sts=4:sw=4
