@@ -35,15 +35,21 @@ class Cell {
 public:
   byte alive : 1;
   byte prev : 1;
-  byte hue: 6;  
+  byte hue: 6;
   byte brightness;
 };
 
-class PatternLife : public Drawable {
+class PatternLife : public AuroraDrawable {
 private:
     Cell world[MATRIX_WIDTH][MATRIX_HEIGHT];
     unsigned int density = 50;
-    int generation = 0;
+	int tick = 0;
+    int resetGeneration = 1;
+	int cellsChanged = 0;
+	int lastCellsChanged = 0;
+	int cellChangeStableCount = 0;
+	int resetGenerationAfterStableCount = 500;
+
 
     void randomFillWorld() {
         for (int i = 0; i < MATRIX_WIDTH; i++) {
@@ -73,16 +79,36 @@ private:
             (world[(x + 1) % MATRIX_WIDTH][(y + MATRIX_HEIGHT - 1) % MATRIX_HEIGHT].prev);
     }
 
+/* 	void getRandomSeed() {
+		  ssize_t nread = 0;
+		  const int fd = open( "/dev/urandom", O_RDONLY );
+		  if( fd >= 0 )
+		  {
+			nread = read( fd, &n, 8 );
+			close(fd);
+		  }
+		  if( nread == 8 )
+			return n;
+	} */
+
 public:
     PatternLife() {
         name = (char *)"Life";
     }
 
     unsigned int drawFrame() {
-        if (generation == 0) {
-            //backgroundLayer.fillScreen(CRGB(CRGB::Black));
-	    matrix->clear();
 
+        if (resetGeneration == 1) {
+
+			Serial.println("**************************************************");
+			Serial.println("Reset Generation!");
+			Serial.print("Generation will reset again at stableCount > ");		Serial.println(resetGenerationAfterStableCount);
+			Serial.println("**************************************************");
+
+			resetGeneration = 0;
+			tick = 0;
+			cellChangeStableCount = 0;
+			matrix->clear();
             randomFillWorld();
         }
 
@@ -99,6 +125,7 @@ public:
                 // Default is for cell to stay the same
                 if (world[x][y].brightness > 0 && world[x][y].prev == 0)
                   world[x][y].brightness *= 0.9;
+
                 int count = neighbours(x, y);
                 if (count == 3 && world[x][y].prev == 0) {
                     // A new cell is born
@@ -112,17 +139,30 @@ public:
             }
         }
 
-        // Copy next generation into place
+        // Copy next resetGeneration into place
         for (int x = 0; x < MATRIX_WIDTH; x++) {
             for (int y = 0; y < MATRIX_HEIGHT; y++) {
+				if (world[x][y].prev != world[x][y].alive) cellsChanged++;
                 world[x][y].prev = world[x][y].alive;
             }
         }
 
+		if (cellsChanged == lastCellsChanged) cellChangeStableCount++;
 
-        generation++;
-        if (generation >= 256)
-            generation = 0;
+		if (cellChangeStableCount > resetGenerationAfterStableCount) {
+			resetGeneration = 1;
+		}
+
+		if (tick % 100 == 0) {
+			Serial.print("tick: ");					Serial.print(tick);
+			Serial.print(", cellsChanged: ");	Serial.print(cellsChanged);
+			Serial.print(", stableCount: ");	Serial.print(cellChangeStableCount);
+			Serial.println();
+		}
+
+		tick++;
+		lastCellsChanged = cellsChanged;
+		cellsChanged = 0;
 
         return 60;
     }

@@ -890,8 +890,8 @@ uint32_t tft_spi_speed;
         const uint16_t MATRIX_TILE_HEIGHT= 192;
     #else
         #pragma message "Please write M384BY256 or equivalent to /root/NM/gfxdisplay (see ../../makeNativeArduino.mk)"
-        const uint16_t MATRIX_TILE_WIDTH = 128;
-        const uint16_t MATRIX_TILE_HEIGHT= 192;
+        const uint16_t MATRIX_TILE_WIDTH = 192;
+        const uint16_t MATRIX_TILE_HEIGHT= 128;
     #endif
 
     // Used by LEDMatrix
@@ -1228,9 +1228,10 @@ void matrix_setup(bool initserial=true, int reservemem = 40000) {
             defaults.led_rgb_sequence = "RBG";
             defaults.panel_type = "FM6126A";
         #else
-            defaults.rows = 64;
-            defaults.cols = 128;
-            defaults.chain_length = 1;
+            defaults.rows = 32;
+            defaults.cols = 64;
+            defaults.chain_length = 4;
+            defaults.pixel_mapper_config = "V-mapper:Z";
             defaults.parallel = 3;
             defaults.pwm_lsb_nanoseconds = 100;
             defaults.pwm_bits = 7;
