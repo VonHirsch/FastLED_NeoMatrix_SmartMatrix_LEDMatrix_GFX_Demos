@@ -28,10 +28,28 @@ class PatternRadar : public AuroraDrawable {
   private:
     byte theta = 0;
     byte hueoffset = 0;
+    int max_offset;
+    float x_aspect_ratio;
+    float y_aspect_ratio;
+
 
   public:
     PatternRadar() {
       name = (char *)"Radar";
+      // handle aspect ratio
+      if (MATRIX_CENTER_X < MATRIX_CENTER_Y) {
+          max_offset = MATRIX_CENTER_X;
+          x_aspect_ratio = 1.0;
+          y_aspect_ratio = (float)MATRIX_HEIGHT / (float)MATRIX_WIDTH;
+      } else if (MATRIX_CENTER_X > MATRIX_CENTER_Y) {
+          max_offset = MATRIX_CENTER_Y;
+          x_aspect_ratio = (float)MATRIX_WIDTH / (float)MATRIX_HEIGHT;
+          y_aspect_ratio = 1.0;
+      } else {
+          max_offset = MATRIX_CENTER_X;
+          x_aspect_ratio = 1.0;
+          y_aspect_ratio = 1.0;
+      }
     }
 
     unsigned int drawFrame() {
@@ -41,12 +59,14 @@ class PatternRadar : public AuroraDrawable {
           effects.DimAll(245);
       }
 
-      for (int offset = 0; offset < MATRIX_CENTER_X; offset++) {
+      for (int offset = 0; offset < max_offset; offset++) {
         //byte hue = 255 - (offset * 16 + hueoffset);
-	byte hue = 255 - (offset * (256 / MATRIX_CENTER_X) + hueoffset);
+	    byte hue = 255 - (offset * (256 / max_offset) + hueoffset);
         CRGB color = effects.ColorFromCurrentPalette(hue);
-        uint8_t x = mapcos8(theta, offset, (MATRIX_WIDTH - 1) - offset);
-        uint8_t y = mapsin8(theta, offset, (MATRIX_HEIGHT - 1) - offset);
+        uint8_t x_offset = offset * x_aspect_ratio;
+        uint8_t y_offset = offset * y_aspect_ratio;
+        uint8_t x = mapcos8(theta, x_offset, (MATRIX_WIDTH - 1) - x_offset);
+        uint8_t y = mapsin8(theta, y_offset, (MATRIX_HEIGHT - 1) - y_offset);
         uint16_t xy = XY(x, y);
         effects.leds[xy] = color;
 
