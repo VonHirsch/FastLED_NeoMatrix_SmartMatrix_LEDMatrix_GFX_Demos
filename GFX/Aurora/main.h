@@ -19,7 +19,7 @@ void setup() {
     effects.leds = matrixleds;
     effects.Setup();
     pattern.start();
-    matrix->clear();
+    //matrix->clear();
 }
 
 // vim:sts=4:sw=4

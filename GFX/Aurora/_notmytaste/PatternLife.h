@@ -42,14 +42,13 @@ public:
 class PatternLife : public AuroraDrawable {
 private:
     Cell world[MATRIX_WIDTH][MATRIX_HEIGHT];
-    unsigned int density = 50;
+    unsigned int density = 25;
 	int tick = 0;
     int resetGeneration = 1;
 	int cellsChanged = 0;
 	int lastCellsChanged = 0;
 	int cellChangeStableCount = 0;
 	int resetGenerationAfterStableCount = 500;
-
 
     void randomFillWorld() {
         for (int i = 0; i < MATRIX_WIDTH; i++) {
@@ -105,10 +104,11 @@ public:
 			Serial.print("Generation will reset again at stableCount > ");		Serial.println(resetGenerationAfterStableCount);
 			Serial.println("**************************************************");
 
+            randomSeed2();
 			resetGeneration = 0;
 			tick = 0;
 			cellChangeStableCount = 0;
-			matrix->clear();
+			//matrix->clear();
             randomFillWorld();
         }
 
@@ -154,7 +154,7 @@ public:
 		}
 
 		if (tick % 100 == 0) {
-			Serial.print("tick: ");					Serial.print(tick);
+			Serial.print("tick: ");				Serial.print(tick);
 			Serial.print(", cellsChanged: ");	Serial.print(cellsChanged);
 			Serial.print(", stableCount: ");	Serial.print(cellChangeStableCount);
 			Serial.println();

@@ -538,7 +538,7 @@ uint32_t tft_spi_speed;
     //#define TFT_CS -1 // for display without CS pin
     #define TFT_CS  0 // White can be wired to ground
     #define TFT_CS2 2 // Orange can be wired to ground
-    
+
     #define TFT_MOSI 23 // Blue
     #define TFT_CLK  18 // Green
     #define TFT_MISO 19 // Yellow
@@ -714,7 +714,7 @@ uint32_t tft_spi_speed;
     const uint16_t mw = 64;
     const uint16_t mh = 96;
     #endif
-    
+
     // Used by LEDMatrix
     // templates prevents being able to get the screen size at runtime. This is why templates must die
     const uint16_t MATRIX_TILE_WIDTH =  mw;
@@ -890,6 +890,7 @@ uint32_t tft_spi_speed;
         const uint16_t MATRIX_TILE_HEIGHT= 192;
     #else
         #pragma message "Please write M384BY256 or equivalent to /root/NM/gfxdisplay (see ../../makeNativeArduino.mk)"
+        // China Panel Settings
         const uint16_t MATRIX_TILE_WIDTH = 192;
         const uint16_t MATRIX_TILE_HEIGHT= 128;
     #endif
@@ -1228,6 +1229,8 @@ void matrix_setup(bool initserial=true, int reservemem = 40000) {
             defaults.led_rgb_sequence = "RBG";
             defaults.panel_type = "FM6126A";
         #else
+            // China Panel Settings
+            uint8_t matrix_brightness = 128;
             defaults.rows = 32;
             defaults.cols = 64;
             defaults.chain_length = 4;
@@ -1398,7 +1401,7 @@ void matrix_setup(bool initserial=true, int reservemem = 40000) {
             Serial.print(millisdiff(before));
             Serial.print("ms, fps: ");
             Serial.println(10*1000 / (millisdiff(before)));
-            // if only one show() command is run and the whole screen 
+            // if only one show() command is run and the whole screen
             // isn't covered, adjust the scale
             //Serial.println(10*1000 / (millisdiff(before)*gfx_scale));
 
@@ -1415,7 +1418,7 @@ void matrix_setup(bool initserial=true, int reservemem = 40000) {
             Serial.println(10*1000 / (millisdiff(before)));
         #endif // HAS_TFT
         before = millis();
-        for (uint16_t i=0; i<5; i++) { 
+        for (uint16_t i=0; i<5; i++) {
             matrix->fillScreen(0xFC00);
             matrix->show();
             #ifdef HAS_TFT
